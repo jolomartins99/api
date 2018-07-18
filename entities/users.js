@@ -5,6 +5,21 @@ const errors = require('../errors/errors');
 
 const users = new Object();
 
+// list of all user fields available
+// you must be very careful to prevent the sending of the password
+// and other delicate information to the user (client-side)
+users.availableFields = [
+    'id',
+    'email',
+    'name',
+    'password',
+    'type_user',
+    'description',
+    'date_start',
+    'token',
+    'token_date_end'
+];
+
 /**
  * create a new user
  *
@@ -80,23 +95,25 @@ users.create = async function(db, info) {
  *                                   example: retrievedInfo = ['id', 'name']
  *
  * @return an object with the fields given in requiredInfo filled or
- *         if requiredInfo is undefined all fields will be retrieved
+ *         if requiredInfo is undefined all fields will be retrieved (except password)
  *         example: result = {
  *                      result: result from the database,
  *                      error: error code
  *                  }
  *
  * NOTE: throws errors (@see entities/errors/errors.js)
+ *       IMPORTANT: the result.result returned has always the token and token_date_end
  */
 users.get = async function(db, searchInfo, retrievedInfo) {
     let query = 'SELECT ', parameters = [], result = {};
     let i = 0;
-    if (retrievedInfo) {
-        for (let len = retrievedInfo.length; i < len; i++) {
-            if (i+1 == len) query += retrievedInfo[i];
-            else query += retrievedInfo[i] + ', ';
-        }
-    } else query += '*';
+    if (!retrievedInfo) retrievedInfo = users.availableFields;
+    query += 'token, token_date_end, ';
+    for (let len = retrievedInfo.length; i < len; i++) {
+        if (retrievedInfo[i] == 'password') continue;
+        query += 'IFNULL(' + retrievedInfo[i] + ', "") as ' + retrievedInfo[i] + ', ';
+    }
+    if (i != 0) query = query.slice(0, -2);
 
     query += ' FROM users';
     i = 0;
@@ -111,7 +128,17 @@ users.get = async function(db, searchInfo, retrievedInfo) {
     if (i != 0) query = query.slice(0, -4);
 
     try {
-        result.result = await db.query(query, parameters);
+        let response = await db.query(query, parameters);
+        for (let index in response) {
+            for (let key in response[index]) {
+                if (response[index].hasOwnProperty(key)
+                && response[index][key] instanceof Buffer) {
+                    let buffer = new Buffer(response[index][key]);
+                    response[index][key] = buffer.toString();
+                }
+            }
+        }
+        result.result = response;
         result.error = errors.OK;
     } catch (error) {
         throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
@@ -145,6 +172,8 @@ users.set = async function(db, searchInfo, updatedInfo) {
         i++;
         if (updatedInfo.hasOwnProperty(key)) {
             query += key + ' = ?, ';
+            if ((key == 'id' || users.availableFields.indexOf(key) == -1) && key != 'password') continue;
+            if (key == 'password') updatedInfo[key] = bcrypt.hashSync(updatedInfo[key], bcrypt.genSaltSync(10));
             parameters.push(updatedInfo[key]);
         }
     }
@@ -226,6 +255,27 @@ users.getDateEnd = function(currentTimestamp) {
  */
 users.getCurrentDate = function() {
     return moment(Date.now()).utc().format('YYYY-MM-DD hh:mm:ss');
+}
+
+/**
+ * remove dangerous fields from POST/PUT variables
+ * like id, token, token_date_end and others that can be useful
+ *
+ * @param post - POST/PUT variables (object)
+ *
+ * @return post object already treated
+ */
+users.removeDangerousFields = function(post) {
+    if (post.hasOwnProperty('id')) delete post.id;
+    if (post.hasOwnProperty('type_user')) delete post.type_user;
+    if (post.hasOwnProperty('token')) delete post.token;
+    if (post.hasOwnProperty('token_date_end')) delete post.token_date_end;
+    for (var key in post) {
+        if (post.hasOwnProperty(key) && users.availableFields.indexOf(key) == -1) {
+            delete post[key];
+        }
+    }
+    return post;
 }
 
 module.exports = users;

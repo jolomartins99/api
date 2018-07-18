@@ -7,11 +7,15 @@ const errors = require('../errors/errors');
 
 const possibleUsers = ['user', 'mentor'];
 
-router.get('/ping', function (req, res, next) {
-    res.status(200).send('pong')
-});
-
-/* create a new user */
+/**
+ * create a new user
+ *
+ * @param name (post variable)
+ * @param email (post variable)
+ * @param password (post variable)
+ * @param passwordConfirmation (post variable)
+ * @param type_user (post variable)
+ */
 router.post('/',
     [
         // Check validity
@@ -43,6 +47,14 @@ router.post('/',
     }
 );
 
+/**
+ * make a new login with the given info
+ *
+ * @param (post variable) email
+ * @param (post variable) password
+ * @param (post variable) type_user
+ * @param other post variables (req.body)
+ */
 router.post('/login', [
         check("email", "Give an email").exists(),
         check("email", "Invalid email").isEmail(),
@@ -60,20 +72,19 @@ router.post('/login', [
             // in case of the users.get retrieve a code error but not an exception
             if (response.error != errors.OK) throw getErrors(response.code);
             // verify if there is a user with this email and with this password
-            if (response.result.length == 0 || !users.verifyPassword(req.body.password, response.result[0]['password'])) {
+            else if (response.result.length == 0 || !users.verifyPassword(req.body.password, response.result[0]['password'])) {
                 throw errors.getError(errors.NOT_FOUND);
             }
             // this if means that there is several users with the same email
             // now the email field is a UNIQUE KEY and it's impossible to go through
             // this if, but just for the case
             else if (response.result.length > 1) throw errors.getError(errors.CONTACT_SUPPORT);
-            else {
-                response = response.result[0];
-                token = response['token'];
-                let date = users.getCurrentDate();
-                if (moment(date).isAfter(response['token_date_end'])) token = users.getToken(response['id']);
-                await users.set(db, {'id': response['id']}, {'token': token, 'token_date_end': dateEnd});
-            }
+
+            response = response.result[0];
+            token = response['token'];
+            let date = users.getCurrentDate();
+            if (moment(date).isAfter(response['token_date_end'])) token = users.getToken(response['id']);
+            await users.set(db, {'id': response['id']}, {'token': token, 'token_date_end': dateEnd});
             status = 200;
             json = {
                 'email': req.body.email,
@@ -94,26 +105,71 @@ router.post('/login', [
 /**
  * retrieve a user with the given token
  * token has to be valid
+ * maybe the 2nd parameter (array to check) is unnecessary, but it's better
+ * practice the way it's done (I think)
+ *
+ * @param token (get variable - token that will validate the user
+
+ * @param all other fields in req.body
+ *
+ * @return
  */
 router.get('/:token',
     [
         check("token", "Give a token.").exists()
     ],
     async function (req, res, next) {
+        let status, json;
+        try {
+            validationResult(req).throw();
+            let user = await getUserByToken(req.app.get('database'), req.params.token, users.availableFields);
+            if (moment(users.getCurrentDate()).isAfter(user.token_date_end)) throw getError(errors.NOT_LOGGED_IN);
+            user.token_date_end = moment(user.token_date_end).utc().format('YYYY-MM-DD hh:mm:ss');
+            status = 200;
+            json = user;
+        } catch (err) {
+            let error = treatError(err);
+            status = error.status;
+            json = error.json;
+        }
 
+        res.status(status).json(json);
     }
 );
 
 /**
  * update a user with the given token
  * token has to be valid
+ *
+ * @param token (get variable) - token that will validate the user
+ * @param all other fields in req.body
  */
 router.put('/:token',
     [
         check("token", "Give a token.").exists()
     ],
-    function (req, res, next) {
+    async function (req, res, next) {
+        let status, json;
+        try {
+            validationResult(req).throw();
+            let toSet = {};
+            req.body = users.removeDangerousFields(req.body);
+            for (let key in req.body) {
+                if (users.availableFields.indexOf(key) != -1) toSet[key] = req.body[key];
+            }
+            await users.set(req.app.get('database'), {'token': req.params.token}, toSet);
+            let user = await getUserByToken(req.app.get('database'), req.params.token, users.availableFields);
+            if (moment(users.getCurrentDate()).isAfter(user.token_date_end)) throw getError(errors.NOT_LOGGED_IN);
+            user.token_date_end = moment(user.token_date_end).utc().format('YYYY-MM-DD hh:mm:ss');
+            status = 200;
+            json = user;
+        } catch (err) {
+            let error = treatError(err);
+            status = error.status;
+            json = error.json;
+        }
 
+        res.status(status).json(json);
     }
 );
 
@@ -130,22 +186,17 @@ router.delete('/:token',
     }
 );
 
-router.post('/public',
-    [
-        check("token", "Provide a token").exists(),
-    ],
-    function(req, res, next) {
-        try {
-            validationResult(req).throw();
-        } catch (err) {
-            // unprocessable entity
-            res.status(422).json({
-                "errors": err.mapped(),
-                "message": "Please pay attention to the notices presented."
-            });
-        }
-    }
-);
+async function getUserByToken(db, token, parameters) {
+    let response = await users.get(db, {'token': token}, parameters);
+    if (response.error != errors.OK) throw getErrors(response.code);
+    else if (response.result.length == 0) throw errors.getError(errors.NOT_FOUND);
+    // this if means that there is several users with the same email
+    // now the email field is a UNIQUE KEY and it's impossible to go through
+    // this if, but just for the case
+    else if (response.result.length > 1) throw errors.getError(errors.CONTACT_SUPPORT);
+
+    return response.result[0];
+}
 
 function treatError(error) {
     let newError = {};

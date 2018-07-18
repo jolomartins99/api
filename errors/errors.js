@@ -16,6 +16,7 @@ errors.DUPLICATED_EMAIL = 2;
 errors.DATABASE_ERROR = 3;
 errors.NOT_FOUND = 4;
 errors.CONTACT_SUPPORT = 5;
+errors.NOT_LOGGED_IN = 6;
 
 /**
  * all possible messages organized by code
@@ -27,6 +28,7 @@ errors.messages[errors.DUPLICATED_EMAIL] = "Email already used.";
 errors.messages[errors.DATABASE_ERROR] = "There was a problem. Please try again later.";
 errors.messages[errors.NOT_FOUND] = "The entity was not found."; // "There is no account with that email and password."
 errors.messages[errors.CONTACT_SUPPORT] = "Please contact the support and explain what happened.";
+errors.messages[errors.NOT_LOGGED_IN] = "Please log in again.";
 
 /**
  * all possible status organized by code
@@ -38,6 +40,7 @@ errors.status[errors.DUPLICATED_EMAIL] = 409;
 errors.status[errors.DATABASE_ERROR] = 500;
 errors.status[errors.NOT_FOUND] = 404;
 errors.status[errors.CONTACT_SUPPORT] = 500;
+errors.status[errors.NOT_LOGGED_IN] = 404;
 
 /**
  * the error returned by this function will be always the same:
