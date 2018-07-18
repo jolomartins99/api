@@ -108,11 +108,8 @@ router.post('/login', [
  * maybe the 2nd parameter (array to check) is unnecessary, but it's better
  * practice the way it's done (I think)
  *
- * @param token (get variable - token that will validate the user
-
- * @param all other fields in req.body
- *
- * @return
+ * @param token (get variable) - token that will validate the user
+ * @param all other fields in req.body (post variables)
  */
 router.get('/:token',
     [
@@ -122,9 +119,9 @@ router.get('/:token',
         let status, json;
         try {
             validationResult(req).throw();
-            let user = await getUserByToken(req.app.get('database'), req.params.token, users.availableFields);
-            if (moment(users.getCurrentDate()).isAfter(user.token_date_end)) throw getError(errors.NOT_LOGGED_IN);
-            user.token_date_end = moment(user.token_date_end).utc().format('YYYY-MM-DD hh:mm:ss');
+            let db = req.app.get('database');
+            let id = (await users.verifyToken(db, req.params.token))['id'];
+            let user = await getUserById(db, id);
             status = 200;
             json = user;
         } catch (err) {
@@ -142,7 +139,7 @@ router.get('/:token',
  * token has to be valid
  *
  * @param token (get variable) - token that will validate the user
- * @param all other fields in req.body
+ * @param all other fields in req.body (post variables)
  */
 router.put('/:token',
     [
@@ -152,15 +149,11 @@ router.put('/:token',
         let status, json;
         try {
             validationResult(req).throw();
-            let toSet = {};
-            req.body = users.removeDangerousFields(req.body);
-            for (let key in req.body) {
-                if (users.availableFields.indexOf(key) != -1) toSet[key] = req.body[key];
-            }
-            await users.set(req.app.get('database'), {'token': req.params.token}, toSet);
-            let user = await getUserByToken(req.app.get('database'), req.params.token, users.availableFields);
-            if (moment(users.getCurrentDate()).isAfter(user.token_date_end)) throw getError(errors.NOT_LOGGED_IN);
-            user.token_date_end = moment(user.token_date_end).utc().format('YYYY-MM-DD hh:mm:ss');
+            let db = req.app.get('database');
+            let id = (await users.verifyToken(db, req.params.token))['id'];
+            let toSet = users.getSecureFieldsToSave(req.body);
+            await users.set(db, {'id': id}, toSet);
+            let user = await getUserById(db, id);
             status = 200;
             json = user;
         } catch (err) {
@@ -186,16 +179,16 @@ router.delete('/:token',
     }
 );
 
-async function getUserByToken(db, token, parameters) {
-    let response = await users.get(db, {'token': token}, parameters);
+async function getUserById(db, id, parameters = users.availableFields) {
+    // necessary to not change the original array in parameters
+    parameters = parameters.slice();
+    parameters = users.getSecureFieldsToReturn(parameters);
+    let response = await users.get(db, {'id': id}, parameters);
     if (response.error != errors.OK) throw getErrors(response.code);
     else if (response.result.length == 0) throw errors.getError(errors.NOT_FOUND);
-    // this if means that there is several users with the same email
-    // now the email field is a UNIQUE KEY and it's impossible to go through
-    // this if, but just for the case
-    else if (response.result.length > 1) throw errors.getError(errors.CONTACT_SUPPORT);
-
-    return response.result[0];
+    let user = response.result[0];
+    user.token_date_end = moment(user.token_date_end).utc().format('YYYY-MM-DD hh:mm:ss');
+    return user;
 }
 
 function treatError(error) {

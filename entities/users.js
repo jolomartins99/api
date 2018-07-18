@@ -110,7 +110,7 @@ users.get = async function(db, searchInfo, retrievedInfo) {
     if (!retrievedInfo) retrievedInfo = users.availableFields;
     query += 'token, token_date_end, ';
     for (let len = retrievedInfo.length; i < len; i++) {
-        if (retrievedInfo[i] == 'password') continue;
+        //if (retrievedInfo[i] == 'password') continue; // only allows our app to access password
         query += 'IFNULL(' + retrievedInfo[i] + ', "") as ' + retrievedInfo[i] + ', ';
     }
     if (i != 0) query = query.slice(0, -2);
@@ -172,7 +172,6 @@ users.set = async function(db, searchInfo, updatedInfo) {
         i++;
         if (updatedInfo.hasOwnProperty(key)) {
             query += key + ' = ?, ';
-            if ((key == 'id' || users.availableFields.indexOf(key) == -1) && key != 'password') continue;
             if (key == 'password') updatedInfo[key] = bcrypt.hashSync(updatedInfo[key], bcrypt.genSaltSync(10));
             parameters.push(updatedInfo[key]);
         }
@@ -220,6 +219,23 @@ users.verifyPassword = function(password, hash) {
 }
 
 /**
+ * verify a given token
+ *
+ * @param db
+ * @param token
+ *
+ * @return object with id, token and token_date_end of the user
+ */
+users.verifyToken = async function(db, token) {
+    let response = await users.get(db, {'token': token}, ['id', 'token', 'token_date_end']);
+    if (response.result.length == 0 || response.result.length > 1
+    || moment(users.getCurrentDate()).isAfter(response.result[0].token_date_end)) {
+        throw getError(errors.NOT_LOGGED_IN);
+    }
+    return response.result[0];
+}
+
+/**
  * get a new token formed with an id and a time
  *
  * @param id - id on which the token is based
@@ -258,24 +274,58 @@ users.getCurrentDate = function() {
 }
 
 /**
- * remove dangerous fields from POST/PUT variables
+ * get fields variable with only secure fields
+ * for another words, remove dangerous fields from POST/PUT variables
  * like id, token, token_date_end and others that can be useful
  *
- * @param post - POST/PUT variables (object)
+ * @param fields - POST/PUT variables (object)
  *
- * @return post object already treated
+ * @return fields object already treated
  */
-users.removeDangerousFields = function(post) {
-    if (post.hasOwnProperty('id')) delete post.id;
-    if (post.hasOwnProperty('type_user')) delete post.type_user;
-    if (post.hasOwnProperty('token')) delete post.token;
-    if (post.hasOwnProperty('token_date_end')) delete post.token_date_end;
-    for (var key in post) {
-        if (post.hasOwnProperty(key) && users.availableFields.indexOf(key) == -1) {
-            delete post[key];
+users.getSecureFieldsToSave = function(fields) {
+    if (fields.hasOwnProperty('id')) delete fields.id;
+    if (fields.hasOwnProperty('type_user')) delete fields.type_user;
+    if (fields.hasOwnProperty('token')) delete fields.token;
+    if (fields.hasOwnProperty('token_date_end')) delete fields.token_date_end;
+    return removeExtraFields(fields, true);
+}
+
+/**
+ * get fields variable with only secure fields to return to the user
+ * for another words, remove dangerous fields from GET variables
+ * like id, password and others that can be useful
+ *
+ * @param fields - GET variables (array)
+ *
+ * @return fields array already treated
+ */
+users.getSecureFieldsToReturn = function(fields) {
+    let index;
+    if ((index = fields.indexOf('id')) != -1) fields.splice(index, 1);
+    if ((index = fields.indexOf('password')) != -1) fields.splice(index, 1);
+    return removeExtraFields(fields, false);
+}
+
+/**
+ * will remove all the fields submitted that the user table doesn't have
+ *
+ * @param fields
+ *
+ * @return fields object already treated
+ */
+function removeExtraFields(fields, isObject = true) {
+    if (isObject) {
+        for (let key in fields) {
+            if (fields.hasOwnProperty(key) && users.availableFields.indexOf(key) == -1) {
+                delete fields[key];
+            }
+        }
+    } else {
+        for (let i = 0, len = fields.length; i < len; i++) {
+            if (users.availableFields.indexOf(fields[i]) == -1) fields.splice(index, 1);
         }
     }
-    return post;
+    return fields;
 }
 
 module.exports = users;
