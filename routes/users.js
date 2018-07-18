@@ -42,7 +42,6 @@ router.post('/',
             status = error.status;
             json = error.json;
         }
-
         res.status(status).json(json);
     }
 );

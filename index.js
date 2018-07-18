@@ -7,6 +7,7 @@ const logger = require('morgan');
 const createError = require('http-errors');
 const bcrypt = require('bcryptjs');
 const database = require('./database/database');
+const cors = require('cors')
 
 const usersRouter = require('./routes/users');
 // const profileRouter = require('./routes/profile');
@@ -18,9 +19,10 @@ const app = express();
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cors())
 app.set('database', database);
 
-const port = process.env.PORT || 80;
+const port = process.env.PORT || 8080;
 
 app.use('/users', usersRouter);
 // app.use('/profile', userRouter);
