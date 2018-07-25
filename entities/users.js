@@ -14,10 +14,14 @@ users.availableFields = [
     'name',
     'password',
     'type_user',
-    'description',
+    'bio',
+    'role',
+    'location',
+    'homepage',
+    'company',
     'date_start',
     'token',
-    'token_date_end'
+    'token_date_end',
 ];
 
 /**
@@ -166,6 +170,7 @@ users.get = async function(db, searchInfo, retrievedInfo) {
  * NOTE: throws errors (@see entities/errors/errors.js)
  */
 users.set = async function(db, searchInfo, updatedInfo) {
+    console.log("updatedInfo " + updatedInfo);
     let query = 'UPDATE users SET ', parameters = [], result = {};
     let i = 0;
     for (let key in updatedInfo) {
