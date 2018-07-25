@@ -19,6 +19,7 @@ users.availableFields = [
     'location',
     'homepage',
     'company',
+    'tags',
     'date_start',
     'token',
     'token_date_end',
@@ -170,7 +171,6 @@ users.get = async function(db, searchInfo, retrievedInfo) {
  * NOTE: throws errors (@see entities/errors/errors.js)
  */
 users.set = async function(db, searchInfo, updatedInfo) {
-    console.log("updatedInfo " + updatedInfo);
     let query = 'UPDATE users SET ', parameters = [], result = {};
     let i = 0;
     for (let key in updatedInfo) {
@@ -178,6 +178,7 @@ users.set = async function(db, searchInfo, updatedInfo) {
         if (updatedInfo.hasOwnProperty(key)) {
             query += key + ' = ?, ';
             if (key == 'password') updatedInfo[key] = bcrypt.hashSync(updatedInfo[key], bcrypt.genSaltSync(10));
+            if (key == 'tags') updatedInfo[key] = JSON.stringify(updatedInfo[key]);
             parameters.push(updatedInfo[key]);
         }
     }

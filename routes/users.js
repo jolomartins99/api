@@ -145,14 +145,12 @@ router.put('/:token',
         check("token", "Give a token.").exists()
     ],
     async function (req, res, next) {
-        let status, json, body = JSON.parse(JSON.stringify(req.body));
+        let status, json;
         try {
-            //res.status(200).json(JSON.parse(JSON.stringify(req.body)));
             validationResult(req).throw();
             let db = req.app.get('database');
             let id = (await users.verifyToken(db, req.params.token))['id'];
-            let toSet = users.getSecureFieldsToSave(body);
-            console.log("toSet", toSet);
+            let toSet = users.getSecureFieldsToSave(req.body);
             await users.set(db, {'id': id}, toSet);
             let user = await getUserById(db, id);
             status = 200;
