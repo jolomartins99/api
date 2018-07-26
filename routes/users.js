@@ -42,6 +42,8 @@ router.post('/',
             status = error.status;
             json = error.json;
         }
+
+        res.setHeader("Cache-Control", "no-cache");
         res.status(status).json(json);
     }
 );
@@ -96,6 +98,7 @@ router.post('/login', [
             json = error.json;
         }
 
+        res.setHeader("Cache-Control", "no-cache");
         res.status(status).json(json);
     }
 );
@@ -128,6 +131,7 @@ router.get('/:token',
             json = error.json;
         }
 
+        res.setHeader("Cache-Control", "no-cache");
         res.status(status).json(json);
     }
 );
@@ -160,6 +164,7 @@ router.put('/:token',
             json = error.json;
         }
 
+        res.setHeader("Cache-Control", "no-cache");
         res.status(status).json(json);
     }
 );
