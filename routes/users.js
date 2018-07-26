@@ -57,8 +57,7 @@ router.post('/',
 router.post('/login', [
         check("email", "Give an email").exists(),
         check("email", "Invalid email").isEmail(),
-        check("password", "Give a password").exists(),
-        check("type_user", "The type is not in the possible types").isIn(possibleUsers)
+        check("password", "Give a password").exists()
     ],
     async function(req, res, next) {
         let status, json, token, dateEnd = users.getDateEnd();
@@ -67,7 +66,7 @@ router.post('/login', [
 
             let db = req.app.get('database');
             //let connection = await db.getConnection();
-            let response = await users.get(db, {'email': req.body.email, 'type_user': req.body.type_user}, ['id', 'password', 'token', 'token_date_end']);
+            let response = await users.get(db, {'email': req.body.email}, ['id', 'password', 'token', 'token_date_end', 'type_user']);
             // in case of the users.get retrieve a code error but not an exception
             if (response.error != errors.OK) throw getErrors(response.code);
             // verify if there is a user with this email and with this password

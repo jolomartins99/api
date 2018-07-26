@@ -5,8 +5,6 @@ const bcrypt = require('bcryptjs');
 const md5 = require('crypto-js/md5');
 const moment = require('moment');
 
-var possibleTypes = ['user', 'mentor'/*, 'team'*/];
-
 /* POST signup page. */
 router.post('/signup',
     [
@@ -74,8 +72,7 @@ router.post('/login',
     [
         check("email", "Give an email").exists(),
         check("email", "Invalid email").isEmail(),
-        check("password", "Give a password").exists(),
-        check("type", "The type is not in the possible types").isIn(possibleTypes)
+        check("password", "Give a password").exists()
     ],
     function(req, res, next) {
         try {
@@ -85,11 +82,11 @@ router.post('/login',
             db.getConnection(function(err, connection) {
                 if (!err) {
                     connection.query('SELECT id, password FROM users' +
-                        ' WHERE email = ? AND type = ?', [
+                        ' WHERE email = ?', [
                             req.body.email,
-                            req.body.type,
                         ],
                         function(error, result, fields) {
+                            
                             if (!error) {
                                 switch (result.length) {
                                     case 0:
