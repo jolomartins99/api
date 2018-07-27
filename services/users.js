@@ -368,7 +368,7 @@ users.getUserId = async function (db, token) {
  */
 
 users.saveTokens = async function (db, token, googleTokens) {
-    let id = await mentors.getMentorId(db, token);
+    let id = await users.getUserId(db, token);
 
     let rowExists = await db.query("SELECT EXISTS(SELECT 1 FROM users_gtokens WHERE user_id = ?)", id);
     for (let index in rowExists) {
