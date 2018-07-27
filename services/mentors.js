@@ -26,7 +26,7 @@ mentors.getMentorId = async function(db, token) {
  * @param token - mentor token
  * @param googleTokens - an object with the google calendar tokens to save
  * 
- * @return status - OK if save operation took place successfully
+ * @returns status - OK if save operation took place successfully
  * 
  */
 
@@ -51,6 +51,48 @@ mentors.saveTokens = async function(db, token, googleTokens) {
     
     let result = await db.query(query, parameters);
   }
+}
+
+/**
+ * retrieves google calendar token & refresh tokens
+ * 
+ * @param db - DB connection
+ * @param token - mentor token
+ * 
+ * @returns googleToken - google calendar token used to access APIs 
+ */
+
+mentors.getTokens = async function (db, token) {
+  let result = {},
+      query = "SELECT access_token, refresh_token FROM mentors_calendar WHERE mentor_id = ?"
+  
+  let id = await mentors.getMentorId(db, token)
+  try {
+    let response = await db.query(query, id)
+    for (let index in response) {
+      for (let key in response[index]) {
+        if (response[index].hasOwnProperty(key)
+          && response[index][key] instanceof Buffer) {
+          let buffer = new Buffer(response[index][key]);
+          response[index][key] = buffer.toString();
+        }
+      }
+    }
+    
+    result.result = response;
+    result.error = errors.OK;
+    /*
+    if(result[0] != undefined) {
+      json = {
+        access_token: result[0]["access_token"],
+        refresh_token: result[0]["refresh_token"]
+      }
+    }*/
+  } catch(err) {
+    throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
+  }
+
+  return result;
 }
 
 module.exports = mentors;
