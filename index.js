@@ -10,7 +10,6 @@ const database = require('./database/database');
 const cors = require('cors')
 
 const usersRouter = require('./routes/users');
-const mentorsRouter = require('./routes/mentors');
 // const profileRouter = require('./routes/profile');
 // const searchRouter = require('./routes/search');
 // const teamRouter = require('./routes/team');
@@ -26,7 +25,6 @@ app.set('database', database);
 const port = process.env.PORT || 8080;
 
 app.use('/users', usersRouter);
-app.use('/mentors', mentorsRouter);
 // app.use('/profile', userRouter);
 // app.use('/search', searchRouter);
 // app.use('/team', teamRouter);

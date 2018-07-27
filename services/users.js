@@ -334,4 +334,94 @@ function removeExtraFields(fields, isObject = true) {
     return fields;
 }
 
+/**
+ * Token Management
+ */
+
+/**
+ * fetches user id using token
+ * 
+ * @param db - DB connection
+ * @param token - User token
+ * 
+ * @return userID - User ID 
+ */
+
+users.getUserId = async function (db, token) {
+    let query = "SELECT id FROM users WHERE token = ?";
+
+    // let's do the query
+    let response = await db.query(query, token)
+    return response[0].id;
+}
+
+
+/**
+ * saves mentor google calendar token and refresh token
+ * 
+ * @param db - A connection to db
+ * @param token - User token
+ * @param googleTokens - An object with the google calendar tokens to save
+ * 
+ * @returns status - OK if save operation took place successfully
+ * 
+ */
+
+users.saveTokens = async function (db, token, googleTokens) {
+    let id = await mentors.getMentorId(db, token);
+
+    let rowExists = await db.query("SELECT EXISTS(SELECT 1 FROM users_gtokens WHERE user_id = ?)", id);
+    for (let index in rowExists) {
+        for (let key in rowExists[index]) {
+            rowExists = rowExists[index][key];
+        }
+    }
+
+    if (rowExists) {
+        // UPDATE tokens
+        let params = [googleTokens.access_token, googleTokens.refresh_token, id];
+        let result = await db.query("UPDATE users_gtokens SET access_token = ?, refresh_token = ? WHERE user_id = ?", params);
+    } else {
+        // INSERT tokens
+        let query = "INSERT INTO users_gtokens (user_id, access_token, refresh_token) VALUES (?,?,?)",
+            parameters = [id, googleTokens.access_token, googleTokens.refresh_token];
+
+        let result = await db.query(query, parameters);
+    }
+}
+
+/**
+ * retrieves google calendar token & refresh tokens
+ * 
+ * @param db - DB connection
+ * @param token - User token
+ * 
+ * @returns googleToken - Google calendar token used to access APIs 
+ */
+
+users.getTokens = async function (db, token) {
+    let result = {},
+        query = "SELECT access_token, refresh_token FROM users_gtokens WHERE user_id = ?"
+
+    let id = await users.getUserId(db, token)
+    try {
+        let response = await db.query(query, id)
+        for (let index in response) {
+            for (let key in response[index]) {
+                if (response[index].hasOwnProperty(key)
+                    && response[index][key] instanceof Buffer) {
+                    let buffer = new Buffer(response[index][key]);
+                    response[index][key] = buffer.toString();
+                }
+            }
+        }
+        result.result = response;
+        result.error = errors.OK;
+    } catch (err) {
+        throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
+    }
+
+    return result;
+}
+
 module.exports = users;
