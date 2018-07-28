@@ -361,13 +361,13 @@ users.getUserId = async function (db, token) {
  * 
  * @param db - A connection to db
  * @param token - User token
- * @param googleTokens - An object with the google calendar tokens to save
+ * @param data - An object with the google calendar tokens to save and the expiration date
  * 
  * @returns status - OK if save operation took place successfully
  * 
  */
 
-users.saveTokens = async function (db, token, googleTokens) {
+users.saveTokens = async function (db, token, data) {
     let id = await users.getUserId(db, token);
 
     let rowExists = await db.query("SELECT EXISTS(SELECT 1 FROM users_gtokens WHERE user_id = ?)", id);
@@ -379,12 +379,12 @@ users.saveTokens = async function (db, token, googleTokens) {
 
     if (rowExists) {
         // UPDATE tokens
-        let params = [googleTokens.access_token, googleTokens.refresh_token, id];
-        let result = await db.query("UPDATE users_gtokens SET access_token = ?, refresh_token = ? WHERE user_id = ?", params);
+        let params = [data.access_token, data.refresh_token, data.expiration , id];
+        let result = await db.query("UPDATE users_gtokens SET access_token = ?, refresh_token = ?, expiration = ? WHERE user_id = ?", params);
     } else {
         // INSERT tokens
-        let query = "INSERT INTO users_gtokens (user_id, access_token, refresh_token) VALUES (?,?,?)",
-            parameters = [id, googleTokens.access_token, googleTokens.refresh_token];
+        let query = "INSERT INTO users_gtokens (user_id, access_token, refresh_token, expiration) VALUES (?,?,?,?)",
+            parameters = [id, data.access_token, data.refresh_token, data.expiration];
 
         let result = await db.query(query, parameters);
     }
@@ -401,7 +401,7 @@ users.saveTokens = async function (db, token, googleTokens) {
 
 users.getTokens = async function (db, token) {
     let result = {},
-        query = "SELECT access_token, refresh_token FROM users_gtokens WHERE user_id = ?"
+        query = "SELECT access_token, refresh_token, expiration FROM users_gtokens WHERE user_id = ?"
 
     let id = await users.getUserId(db, token)
     try {

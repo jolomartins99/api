@@ -225,7 +225,8 @@ function treatError(error) {
 router.post('/token/:token', [
     check("token", "Give a token").exists(),
     check('access_token', 'Give an access token').exists(),
-    check('refresh_token', 'Give a refresh token').exists()
+    check('refresh_token', 'Give a refresh token').exists(),
+    check('expiration', 'Give an expiration date').exists()
 ],
     async function (req, res, next) {
         let status, json;
