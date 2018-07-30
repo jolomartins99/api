@@ -201,7 +201,6 @@ users.set = async function(db, searchInfo, updatedInfo) {
     } catch (error) {
         throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
     }
-    if (result.result.length) throw errors.getError(errors.NOT_FOUND);
 }
 
 users.delete = async function() {
@@ -420,6 +419,7 @@ users.getTokens = async function (db, token) {
     } catch (err) {
         throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
     }
+    if (!result.result.length) throw errors.getError(errors.NOT_FOUND);
 
     return result;
 }

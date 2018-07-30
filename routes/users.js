@@ -233,13 +233,17 @@ router.post('/token/:token', [
         try {
             //validationResult(req).throw();
 
-            let response = await users.saveTokens(req.app.get("database"), req.params.token, req.body);
-
-            res.setHeader("Cache-Control", "no-store, must-revalidate, no-cache, max-age=0");
-            res.status(200).send();
+            await users.saveTokens(req.app.get("database"), req.params.token, req.body);
+            status = 200
+            json = {}
         } catch (err) {
-            console.log(err)
+            let error = treatError(err);
+            status = error.status;
+            json = error.json;
         }
+
+        res.setHeader("Cache-Control", "no-store, must-revalidate, no-cache, max-age=0");
+        res.status(200).send(json);
     }
 );
 
