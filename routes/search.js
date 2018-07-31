@@ -54,16 +54,21 @@ router.get('/:search',
 async function searchByName(db, searchArray) {
     let searchArrayAux = [];
     let query = "SELECT users.id FROM users WHERE users.type_user = 'mentor' AND ";
-    let i = 0;
-    for (let len = searchArray.length; i < len; i++) {
-        query += "users.name LIKE ? OR ";
-        searchArrayAux.push('%' + searchArray[i].toLowerCase() + '%');
+    if (searchArray.length == 0) {
+        query = query.slice(0, -5);
+    } else {
+        for (let i = 0, len = searchArray.length; i < len; i++) {
+            query += "users.name LIKE ? OR ";
+            searchArrayAux.push('%' + searchArray[i].toLowerCase() + '%');
+        }
+        query = query.slice(0, -4);
     }
-    if (i != 0) query = query.slice(0, -4);
     return (await db.query(query, searchArrayAux));
 }
 
 async function searchByTags(db, searchArray) {
+    if (searchArray.length == 0) return;
+
     let query = "SELECT users.id FROM users, users_tags, tags WHERE users.type_user = 'mentor' " +
         "AND users.id = users_tags.user_id AND tags.id = users_tags.tag_id AND tags.tag IN (";
     let i = 0;
@@ -71,8 +76,7 @@ async function searchByTags(db, searchArray) {
         query += "?,";
         searchArray[i] = searchArray[i].toLowerCase();
     }
-    if (i != 0) query = query.slice(0, -1);
-    query += ')';
+    query = query.slice(0, -1) + ')';
     return (await db.query(query, searchArray));
 }
 
