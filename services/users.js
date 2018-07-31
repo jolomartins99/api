@@ -13,8 +13,9 @@ users.availableFields = [
     'id',
     'email',
     'name',
-    'search_key',
     'password',
+    'search_key',
+    'picture_hash',
     'bio',
     'type_user',
     'date_start',
@@ -61,12 +62,13 @@ users.create = async function(db, info) {
         let len;
         searchKey += ((len = response.length) != 0 ? len : '');
 
-        await conn.query('INSERT INTO users (email, name, password, search_key, type_user, token, token_date_end)' +
-            ' VALUES (?, ?, ?, ?, ?, ?, ?)', [
+        await conn.query('INSERT INTO users (email, name, password, search_key, picture_hash, type_user, token, token_date_end)' +
+            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
                 info.email,
                 info.name,
                 hash,
                 searchKey,
+                info.picture_hash,
                 info.type_user,
                 token,
                 dateEnd
