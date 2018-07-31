@@ -41,7 +41,6 @@ router.get('/:search',
             json = general.getJsonToResponse(response.result, errors.OK);
             status = 200;
         } catch (err) {
-            console.log(err);
             let error = general.treatError(err);
             status = error.status;
             json = error.json;

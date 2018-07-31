@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const md5 = require('crypto-js/md5');
 const moment = require('moment');
 const errors = require('../errors/errors');
-const { tr, slugify } = require('transliteration') ;
+const { tr, slugify } = require('transliteration');
 
 const users = new Object();
 

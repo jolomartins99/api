@@ -38,4 +38,14 @@ pool.getConnection((err, connection) => {
 pool.query = util.promisify(pool.query);
 pool.getConnection = util.promisify(pool.getConnection);
 
+pool.createConnection = async function() {
+    let conn = await pool.getConnection();
+    conn.query = util.promisify(conn.query);
+
+    conn.beginTransaction = util.promisify(conn.beginTransaction);
+    conn.commit = util.promisify(conn.commit);
+    conn.rollback = util.promisify(conn.rollback);
+    return conn;
+}
+
 module.exports = pool;
