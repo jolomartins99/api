@@ -2,8 +2,8 @@ const express = require('express');
 const { check, validationResult } = require('express-validator/check');
 const router = express.Router();
 const moment = require('moment');
-const general = require('../entities/general');
-const users = require('../entities/users');
+const general = require('../services/general');
+const users = require('../services/users');
 const errors = require('../errors/errors');
 
 router.get('/:search',

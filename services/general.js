@@ -2,7 +2,7 @@ const express = require('express');
 const { check, validationResult } = require('express-validator/check');
 const router = express.Router();
 const moment = require('moment');
-const users = require('../entities/users');
+const users = require('./users');
 const errors = require('../errors/errors');
 
 const general = new Object();
