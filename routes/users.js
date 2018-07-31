@@ -217,6 +217,25 @@ function treatError(error) {
     return newError;
 }
 
+router.get('/mentors/:search_key', [
+    check('search_key', 'Give a search key').exists()
+], async function(req, res, next) {
+    let status, json;
+    try {
+        let response = await users.get(req.app.get('database'), {'search_key': req.params.search_key}, ['name', 'picture_hash', 'role', 'company', 'bio', 'tags'])
+        
+        status = 200;
+        json = response.result[0];
+    } catch(err) {
+        let error = treatError(err)
+        stuats = error.status;
+        json = error.json;
+    }
+
+    res.setHeader("Cache-Control", "no-store, must-revalidate, no-cache, max-age=0");
+    res.status(200).send(json);
+});
+
 /**
  * save user google access & refresh token
  * 

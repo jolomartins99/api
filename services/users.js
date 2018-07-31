@@ -14,6 +14,8 @@ users.availableFields = [
     'name',
     'password',
     'type_user',
+    'search_key',
+    'picture_hash',
     'bio',
     'role',
     'location',
@@ -53,14 +55,16 @@ users.create = async function(db, info) {
         // anything goes for the first parameter
         let token = users.getToken(salt);
 
-        await db.query('INSERT INTO users (email, name, password, type_user, token, token_date_end)' +
-            ' VALUES (?, ?, ?, ?, ?, ?)', [
+        await db.query('INSERT INTO users (email, name, password, type_user, token, token_date_end, search_key, picture_hash)' +
+            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
                 info.email,
                 info.name,
                 hash,
                 info.type_user,
                 token,
-                dateEnd
+                dateEnd,
+                info.search_key,
+                info.picture_hash
             ]
         );
 
@@ -331,6 +335,18 @@ function removeExtraFields(fields, isObject = true) {
         }
     }
     return fields;
+}
+
+/**
+ * 
+ * Mentor profile page
+ * 
+ */
+
+users.getMentorInfo = async function (db, search_key) {
+    let query = 'SELECT * FROM users WHERE search_key = ?';
+    
+    let response = await db.query(query, search_key)
 }
 
 /**
