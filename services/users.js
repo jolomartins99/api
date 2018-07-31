@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const md5 = require('crypto-js/md5');
 const moment = require('moment');
 const errors = require('../errors/errors');
+const { tr, slugify } = require('transliteration') ;
 
 const users = new Object();
 
@@ -12,19 +13,14 @@ users.availableFields = [
     'id',
     'email',
     'name',
-    'password',
-    'type_user',
     'search_key',
-    'picture_hash',
+    'password',
     'bio',
-    'role',
-    'location',
-    'homepage',
-    'company',
-    'tags',
+    'type_user',
     'date_start',
     'token',
     'token_date_end',
+    'tags', // is a different table
 ];
 
 /**
@@ -39,14 +35,14 @@ users.availableFields = [
  *        "email": "bob.test@gmail.com",
  *        "name": "Bob",
  *        "token": "tokenTest",
- *        "dateEnd": some date (like users.getDateEnd()),
+ *        "token_date_end": some date (like users.getDateEnd()),
  *    }
  * }
  *
  * NOTE: throws errors (@see entities/errors/errors.js)
  */
 users.create = async function(db, info) {
-    let result = {};
+    let result = {}, conn;
     try {
         // password hashing
         let salt = bcrypt.genSaltSync(10);
@@ -54,28 +50,44 @@ users.create = async function(db, info) {
         let dateEnd = users.getDateEnd();
         // anything goes for the first parameter
         let token = users.getToken(salt);
+        conn = await db.createConnection();
+        await conn.beginTransaction();
 
-        await db.query('INSERT INTO users (email, name, password, type_user, token, token_date_end, search_key, picture_hash)' +
-            ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        let searchKey = slugify(info.name);
+        // remove hifens from searchKey variable
+        searchKey = searchKey.replace(/-/g, "");
+        let query = 'SELECT users.id FROM users WHERE users.search_key LIKE ?';
+        let response = await conn.query(query, [searchKey + '%']);
+        let len;
+        searchKey += ((len = response.length) != 0 ? len : '');
+
+        await conn.query('INSERT INTO users (email, name, password, search_key, type_user, token, token_date_end)' +
+            ' VALUES (?, ?, ?, ?, ?, ?, ?)', [
                 info.email,
                 info.name,
                 hash,
+                searchKey,
                 info.type_user,
                 token,
-                dateEnd,
-                info.search_key,
-                info.picture_hash
+                dateEnd
             ]
         );
+
+        await conn.commit();
+        conn.release();
 
         result.result = {
             "email": info.email,
             "name": info.name,
+            "search_key": searchKey,
             "token": token,
-            "dateEnd": dateEnd
+            "token_date_end": dateEnd
         };
-        result.error = errors.OK;
     } catch (error) {
+        if (conn) {
+            conn.rollback();
+            conn.release();
+        }
         // any of the possibilities means that the email is duplicated
         if (error.code === 'ER_DUP_ENTRY' || error.errno == 1062) {
             throw errors.getError(errors.DUPLICATED_EMAIL);
@@ -101,7 +113,7 @@ users.create = async function(db, info) {
  * @param retrievedInfo (optional) - array with info fields about the user (or users)
  *                                   that is pretended to send as a result
  *                                   is used in: 'SELECT ' + retrievedInfo
- *                                   example: retrievedInfo = ['id', 'name']
+ *                                   example: retrievedInfo = ['email', 'name']
  *
  * @return an object with the fields given in requiredInfo filled or
  *         if requiredInfo is undefined all fields will be retrieved (except password)
@@ -111,44 +123,96 @@ users.create = async function(db, info) {
  *                  }
  *
  * NOTE: throws errors (@see entities/errors/errors.js)
- *       IMPORTANT: the result.result returned has always the token and token_date_end
+ *       IMPORTANT: the result.result returned has always the id, token and token_date_end
+ *
+ * NOTE: anytime that you wants tags, you have to provide in the searchInfo
+ *       the type_user property as a 'mentor'
  */
 users.get = async function(db, searchInfo, retrievedInfo) {
     let query = 'SELECT ', parameters = [], result = {};
-    let i = 0;
-    if (!retrievedInfo) retrievedInfo = users.availableFields;
-    query += 'token, token_date_end, ';
+    let i = 0, hasTags = false;
+    // copy users.availableFields to retrievedInfo if retrievedInfo is not defined
+    if (!retrievedInfo) retrievedInfo = users.availableFields.slice();
+    query += 'users.id, users.type_user, users.token, users.token_date_end, ';
     for (let len = retrievedInfo.length; i < len; i++) {
         //if (retrievedInfo[i] == 'password') continue; // only allows our app to access password
-        query += 'IFNULL(' + retrievedInfo[i] + ', "") as ' + retrievedInfo[i] + ', ';
+        if (retrievedInfo[i] == 'tags') {
+            if (searchInfo['type_user'] == 'mentor') {
+                hasTags = true;
+            }
+            continue;
+        }
+        query += 'IFNULL(users.' + retrievedInfo[i] + ', "") as ' + retrievedInfo[i] + ', ';
     }
     if (i != 0) query = query.slice(0, -2);
 
     query += ' FROM users';
     i = 0;
     for (let key in searchInfo) {
-        if (i == 0) query += ' WHERE';
-        i++;
-        if (searchInfo.hasOwnProperty(key)) {
-            query += ' ' + key + ' = ? AND';
-            parameters.push(searchInfo[key]);
+        if (i == 0) {
+            query += ' WHERE';
+        }
+        if (key != 'tags') {
+            i++;
+            if (searchInfo.hasOwnProperty(key)) {
+                // search for a property but with several values to that property
+                if (searchInfo[key].constructor === Array) {
+                    let arrayFromKey = searchInfo[key];
+                    query += ' users.' + key + ' IN (';
+                    for (let i = 0, len = arrayFromKey.length; i < len; i++) {
+                        query += '?,';
+                        parameters.push(arrayFromKey[i]);
+                    }
+                    query = query.slice(0, -1) + ') AND';
+                }
+                // search for a property with one single value
+                else {
+                    query += ' users.' + key + ' = ? AND';
+                    parameters.push(searchInfo[key]);
+                }
+            }
         }
     }
     if (i != 0) query = query.slice(0, -4);
 
     try {
         let response = await db.query(query, parameters);
-        for (let index in response) {
-            for (let key in response[index]) {
-                if (response[index].hasOwnProperty(key)
-                && response[index][key] instanceof Buffer) {
-                    let buffer = new Buffer(response[index][key]);
-                    response[index][key] = buffer.toString();
+        let lenResponse = response.length;
+        if (lenResponse) {
+            let tags = {};
+            if (hasTags) {
+                parameters = [];
+                query = 'SELECT users_tags.user_id, tags.tag FROM tags, users_tags ' +
+                    'WHERE tags.id = users_tags.tag_id AND users_tags.user_id IN (';
+                for (let i = 0, len = response.length; i < len; i++) {
+                    if (response[i].hasOwnProperty('id')) {
+                        query += '?,';
+                        parameters.push(response[i]['id']);
+                    }
+                }
+                query = query.slice(0, -1) + ')';
+                let result = await db.query(query, parameters);
+                for (let i = 0, len = result.length; i < len; i++) {
+                    if (tags.hasOwnProperty(result[i]['user_id'])) tags[result[i]['user_id']].push(result[i]['tag']);
+                    else tags[result[i]['user_id']] = [result[i]['tag']];
+                }
+                for (let i = 0, len = response.length; i < len; i++) {
+                    response[i].tags = (tags[response[i]['id']] ? tags[response[i]['id']] : []);
+                }
+            }
+
+            for (let index in response) {
+                for (let key in response[index]) {
+                    if (response[index].hasOwnProperty(key)
+                    && response[index][key] instanceof Buffer) {
+                        let buffer = new Buffer(response[index][key]);
+                        response[index][key] = buffer.toString();
+                    }
                 }
             }
         }
+
         result.result = response;
-        result.error = errors.OK;
     } catch (error) {
         throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
     }
@@ -175,14 +239,22 @@ users.get = async function(db, searchInfo, retrievedInfo) {
  * NOTE: throws errors (@see entities/errors/errors.js)
  */
 users.set = async function(db, searchInfo, updatedInfo) {
-    let query = 'UPDATE users SET ', parameters = [], result = {};
+    let query = 'UPDATE users SET ', parameters = [], result = {},
+    hasTags = false, hasName = false, toUpdate = false;
     let i = 0;
     for (let key in updatedInfo) {
         i++;
         if (updatedInfo.hasOwnProperty(key)) {
-            query += key + ' = ?, ';
+            if (key == 'tags') {
+                hasTags = true;
+                continue;
+            }
+
+            if (key == 'id' || hasTags) continue;
+            toUpdate = true;
+            if (key == 'name') hasName = true;
+            query += 'users.' + key + ' = ?, ';
             if (key == 'password') updatedInfo[key] = bcrypt.hashSync(updatedInfo[key], bcrypt.genSaltSync(10));
-            if (key == 'tags') updatedInfo[key] = JSON.stringify(updatedInfo[key]);
             parameters.push(updatedInfo[key]);
         }
     }
@@ -193,18 +265,19 @@ users.set = async function(db, searchInfo, updatedInfo) {
         if (i == 0) query += ' WHERE';
         i++;
         if (searchInfo.hasOwnProperty(key)) {
-            query += ' ' + key + ' = ? AND';
+            query += ' users.' + key + ' = ? AND';
             parameters.push(searchInfo[key]);
         }
     }
     if (i != 0) query = query.slice(0, -4);
 
     try {
-        result.result = await db.query(query, parameters);
-        result.error = errors.OK;
+        if (toUpdate) result.result = await db.query(query, parameters);
+        if (searchInfo['type_user'] == 'mentor' && hasTags) await saveTags(db, searchInfo['id'], updatedInfo['tags']);
     } catch (error) {
-        throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
+        throw errors.getError(errors.DATABASE_ERROR);
     }
+    return result;
 }
 
 users.delete = async function() {
@@ -233,13 +306,13 @@ users.verifyPassword = function(password, hash) {
  * @param db
  * @param token
  *
- * @return object with id, token and token_date_end of the user
+ * @return object with id, type_user, token and token_date_end of the user
  */
 users.verifyToken = async function(db, token) {
-    let response = await users.get(db, {'token': token}, ['id', 'token', 'token_date_end']);
+    let response = await users.get(db, {'token': token}, ['id', 'type_user', 'token', 'token_date_end']);
     if (response.result.length == 0 || response.result.length > 1
     || moment(users.getCurrentDate()).isAfter(response.result[0].token_date_end)) {
-        throw getError(errors.NOT_LOGGED_IN);
+        throw errors.getError(errors.NOT_LOGGED_IN);
     }
     return response.result[0];
 }
@@ -312,6 +385,7 @@ users.getSecureFieldsToReturn = function(fields) {
     let index;
     if ((index = fields.indexOf('id')) != -1) fields.splice(index, 1);
     if ((index = fields.indexOf('password')) != -1) fields.splice(index, 1);
+    if ((index = fields.indexOf('type_user')) != -1) fields.splice(index, 1);
     return removeExtraFields(fields, false);
 }
 
@@ -325,119 +399,72 @@ users.getSecureFieldsToReturn = function(fields) {
 function removeExtraFields(fields, isObject = true) {
     if (isObject) {
         for (let key in fields) {
-            if (fields.hasOwnProperty(key) && users.availableFields.indexOf(key) == -1) {
+            if (fields.hasOwnProperty(key) && !users.availableFields.includes(key)) {
                 delete fields[key];
             }
         }
     } else {
-        for (let i = 0, len = fields.length; i < len; i++) {
-            if (users.availableFields.indexOf(fields[i]) == -1) fields.splice(index, 1);
+        for (let len = fields.length, i = len - 1; i >= 0; i--) {
+            if (!users.availableFields.includes(fields[i])) {
+                fields.splice(i, 1);
+            }
         }
     }
     return fields;
 }
 
 /**
- * 
- * Mentor profile page
- * 
+ * save all the tags in tags array in db and delete the others that was
+ * associated to this user (with userId), but that aren't anymore
+ *
+ * @param db
+ * @param userId
+ * @param tags - array with the tags to save
  */
+async function saveTags(db, userId, tags) {
+    if (tags == []) return;
 
-users.getMentorInfo = async function (db, search_key) {
-    let query = 'SELECT * FROM users WHERE search_key = ?';
-    
-    let response = await db.query(query, search_key)
-}
+    query = 'INSERT IGNORE INTO tags (tag) VALUES ';
+    for (let len = tags.length, i = 0; i < len; i++) {
+        query += '(?),';
+    }
+    query = query.slice(0, -1);
+    await db.query(query, tags);
 
-/**
- * Token Management
- */
+    query = 'SELECT id FROM tags WHERE tag IN (';
+    for (let i = 0, len = tags.length; i < len; i++) query += '?,';
+    query = query.slice(0, -1) + ')';
+    let result = await db.query(query, tags);
 
-/**
- * fetches user id using token
- * 
- * @param db - DB connection
- * @param token - User token
- * 
- * @return userID - User ID 
- */
+    let parameters = [];
+    query = 'INSERT IGNORE INTO users_tags (user_id, tag_id) VALUES ';
+    for (let len = result.length, i = 0; i < len; i++) {
+        query += '(?, ?),';
+        parameters.push(userId, result[i]['id']);
+    }
+    query = query.slice(0, -1);
+    await db.query(query, parameters);
 
-users.getUserId = async function (db, token) {
-    let query = "SELECT id FROM users WHERE token = ?";
+    parameters = [userId];
+    query = 'SELECT users_tags.id FROM users_tags, tags WHERE users_tags.user_id = ? '+
+        'AND users_tags.tag_id = tags.id AND tags.tag NOT IN (';
+    for (let i = 0, len = tags.length; i < len; i++) {
+        query += '?,';
+        parameters.push(tags[i]);
+    }
+    query = query.slice(0, -1) + ')';
+    result = await db.query(query, parameters);
 
-    // let's do the query
-    let response = await db.query(query, token)
-    return response[0].id;
-}
-
-
-/**
- * saves mentor google calendar token and refresh token
- * 
- * @param db - A connection to db
- * @param token - User token
- * @param data - An object with the google calendar tokens to save and the expiration date
- * 
- * @returns status - OK if save operation took place successfully
- * 
- */
-
-users.saveTokens = async function (db, token, data) {
-    let id = await users.getUserId(db, token);
-
-    let rowExists = await db.query("SELECT EXISTS(SELECT 1 FROM users_gtokens WHERE user_id = ?)", id);
-    for (let index in rowExists) {
-        for (let key in rowExists[index]) {
-            rowExists = rowExists[index][key];
+    parameters = [];
+    query = 'DELETE FROM users_tags WHERE id IN (';
+    if (result.length) {
+        for (let i = 0, len = result.length; i < len; i++) {
+            query += '?,';
+            parameters.push(result[i]['id']);
         }
+        query = query.slice(0, -1) + ')';
+        await db.query(query, parameters);
     }
-
-    if (rowExists) {
-        // UPDATE tokens
-        let params = [data.access_token, data.refresh_token, data.expiration , id];
-        let result = await db.query("UPDATE users_gtokens SET access_token = ?, refresh_token = ?, expiration = ? WHERE user_id = ?", params);
-    } else {
-        // INSERT tokens
-        let query = "INSERT INTO users_gtokens (user_id, access_token, refresh_token, expiration) VALUES (?,?,?,?)",
-            parameters = [id, data.access_token, data.refresh_token, data.expiration];
-
-        let result = await db.query(query, parameters);
-    }
-}
-
-/**
- * retrieves google calendar token & refresh tokens
- * 
- * @param db - DB connection
- * @param token - User token
- * 
- * @returns googleToken - Google calendar token used to access APIs 
- */
-
-users.getTokens = async function (db, token) {
-    let result = {},
-        query = "SELECT access_token, refresh_token, expiration FROM users_gtokens WHERE user_id = ?"
-
-    let id = await users.getUserId(db, token)
-    try {
-        let response = await db.query(query, id)
-        for (let index in response) {
-            for (let key in response[index]) {
-                if (response[index].hasOwnProperty(key)
-                    && response[index][key] instanceof Buffer) {
-                    let buffer = new Buffer(response[index][key]);
-                    response[index][key] = buffer.toString();
-                }
-            }
-        }
-        result.result = response;
-        result.error = errors.OK;
-    } catch (err) {
-        throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
-    }
-    if (!result.result.length) throw errors.getError(errors.NOT_FOUND);
-
-    return result;
 }
 
 module.exports = users;

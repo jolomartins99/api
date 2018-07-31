@@ -10,8 +10,8 @@ const database = require('./database/database');
 const cors = require('cors')
 
 const usersRouter = require('./routes/users');
-// const profileRouter = require('./routes/profile');
-// const searchRouter = require('./routes/search');
+const profileRouter = require('./routes/profile');
+const searchRouter = require('./routes/search');
 // const teamRouter = require('./routes/team');
 
 const app = express();
@@ -25,8 +25,8 @@ app.set('database', database);
 const port = process.env.PORT || 8080;
 
 app.use('/users', usersRouter);
-// app.use('/profile', userRouter);
-// app.use('/search', searchRouter);
+app.use('/profile', profileRouter);
+app.use('/search', searchRouter);
 // app.use('/team', teamRouter);
 
 // catch 404 and forward to error handler
