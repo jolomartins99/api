@@ -165,11 +165,13 @@ users.get = async function(db, searchInfo, retrievedInfo) {
                 if (searchInfo[key].constructor === Array) {
                     let arrayFromKey = searchInfo[key];
                     query += ' users.' + key + ' IN (';
-                    for (let i = 0, len = arrayFromKey.length; i < len; i++) {
+                    let i = 0;
+                    for (let len = arrayFromKey.length; i < len; i++) {
                         query += '?,';
                         parameters.push(arrayFromKey[i]);
                     }
-                    query = query.slice(0, -1) + ') AND';
+                    if (i != 0) query = query.slice(0, -1);
+                    query += ') AND';
                 }
                 // search for a property with one single value
                 else {
@@ -190,13 +192,15 @@ users.get = async function(db, searchInfo, retrievedInfo) {
                 parameters = [];
                 query = 'SELECT users_tags.user_id, tags.tag FROM tags, users_tags ' +
                     'WHERE tags.id = users_tags.tag_id AND users_tags.user_id IN (';
-                for (let i = 0, len = response.length; i < len; i++) {
+                let i = 0;
+                for (let len = response.length; i < len; i++) {
                     if (response[i].hasOwnProperty('id')) {
                         query += '?,';
                         parameters.push(response[i]['id']);
                     }
                 }
-                query = query.slice(0, -1) + ')';
+                if (i != 0) query = query.slice(0, -1);
+                query += ')';
                 let result = await db.query(query, parameters);
                 for (let i = 0, len = result.length; i < len; i++) {
                     if (tags.hasOwnProperty(result[i]['user_id'])) tags[result[i]['user_id']].push(result[i]['tag']);
@@ -430,45 +434,53 @@ function removeExtraFields(fields, isObject = true) {
 async function saveTags(db, userId, tags) {
     if (tags == []) return;
 
+    let i = 0;
     query = 'INSERT IGNORE INTO tags (tag) VALUES ';
-    for (let len = tags.length, i = 0; i < len; i++) {
+    for (let len = tags.length; i < len; i++) {
         query += '(?),';
     }
-    query = query.slice(0, -1);
+    if (i != 0) query = query.slice(0, -1);
     await db.query(query, tags);
 
+    i = 0;
     query = 'SELECT id FROM tags WHERE tag IN (';
-    for (let i = 0, len = tags.length; i < len; i++) query += '?,';
-    query = query.slice(0, -1) + ')';
+    for (let len = tags.length; i < len; i++) query += '?,';
+    if (i != 0) query = query.slice(0, -1);
+    query += ')';
     let result = await db.query(query, tags);
 
     let parameters = [];
+    i = 0;
     query = 'INSERT IGNORE INTO users_tags (user_id, tag_id) VALUES ';
-    for (let len = result.length, i = 0; i < len; i++) {
+    for (let len = result.length; i < len; i++) {
         query += '(?, ?),';
         parameters.push(userId, result[i]['id']);
     }
-    query = query.slice(0, -1);
+    if (i != 0) query = query.slice(0, -1);
     await db.query(query, parameters);
 
+    i = 0;
     parameters = [userId];
     query = 'SELECT users_tags.id FROM users_tags, tags WHERE users_tags.user_id = ? '+
         'AND users_tags.tag_id = tags.id AND tags.tag NOT IN (';
-    for (let i = 0, len = tags.length; i < len; i++) {
+    for (let len = tags.length; i < len; i++) {
         query += '?,';
         parameters.push(tags[i]);
     }
-    query = query.slice(0, -1) + ')';
+    if (i != 0) query = query.slice(0, -1);
+    query += ')';
     result = await db.query(query, parameters);
 
     parameters = [];
     query = 'DELETE FROM users_tags WHERE id IN (';
     if (result.length) {
-        for (let i = 0, len = result.length; i < len; i++) {
+        i = 0;
+        for (let len = result.length; i < len; i++) {
             query += '?,';
             parameters.push(result[i]['id']);
         }
-        query = query.slice(0, -1) + ')';
+        if (i != 0) query = query.slice(0, -1);
+        query += ')';
         await db.query(query, parameters);
     }
 }
