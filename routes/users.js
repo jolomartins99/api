@@ -209,11 +209,11 @@ router.post('/token/:token', [
         let status, json;
         try {
             //validationResult(req).throw();
-             await users.saveTokens(req.app.get("database"), req.params.token, req.body);
+            await users.saveTokens(req.app.get("database"), req.params.token, req.body);
             status = 200
             json = {}
         } catch (err) {
-            let error = treatError(err);
+            let error = general.treatError(err);
             status = error.status;
             json = error.json;
         }
@@ -233,13 +233,14 @@ router.get("/token/:token",
         let status, json = {};
         try {
             let response = await users.getTokens(req.app.get("database"), req.params.token)
+            console.log(response)
             json = response.result[0]
             if (!response.result[0]) {
                 status = 404;
                 json = {};
             }
         } catch (err) {
-            let error = treatError(err);
+            let error = general.treatError(err);
             status = error.status;
             json = error.json;
         }
