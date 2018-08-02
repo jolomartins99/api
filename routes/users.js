@@ -240,7 +240,7 @@ router.get("/token/:token",
                 json = {};
             }
         } catch (err) {
-            let error = general.treatError(err);
+            let error = general.treatError(err)
             status = error.status;
             json = error.json;
         }
