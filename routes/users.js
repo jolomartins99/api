@@ -31,14 +31,20 @@ router.post('/',
         check("type_user", "The type is not in the possible types.").isIn(possibleUsers)
     ],
     async function (req, res, next) {
-        let status, json;
+        let status, json, conn;
         try {
             validationResult(req).throw();
-            let response = await users.create(req.app.get('database'), req.body);
+            let db = req.app.get('database');
+            conn = await db.createConnection();
+            await conn.beginTransaction();
+            let response = await users.create(conn, req.body);
+            await conn.commit();
+            conn.release();
+
             status = 201;
-            //json = general.getJsonToResponse(response.result, errors.OK);
-            json = response.result;
-            json.error = errors.OK;
+            json = general.getJsonToResponse(response.result, errors.OK);
+            /*json = response.result;
+            json.error = errors.OK;*/
         } catch (err) {
             let error = general.treatError(err);
             status = error.status;
@@ -62,13 +68,14 @@ router.post('/login', [
         check("type_user", "The type is not in the possible types").isIn(possibleUsers)
     ],
     async function(req, res, next) {
-        let status, json, token, dateEnd = users.getDateEnd();
+        let status, json, token, dateEnd = users.getDateEnd(), conn;
         try {
             validationResult(req).throw();
 
             let db = req.app.get('database');
-            //let connection = await db.getConnection();
-            let response = await users.get(db, {'email': req.body.email, 'type_user': req.body.type_user}, ['id', 'password', 'type_user', 'token', 'token_date_end']);
+            conn = await db.createConnection();
+            await conn.beginTransaction();
+            let response = await users.get(conn, {'email': req.body.email, 'type_user': req.body.type_user}, ['id', 'password', 'type_user', 'token', 'token_date_end']);
             // verify if there is a user with this email and with this password
             if (response.result.length == 0 || !users.verifyPassword(req.body.password, response.result[0]['password'])) {
                 throw errors.getError(errors.NOT_FOUND);
@@ -82,20 +89,24 @@ router.post('/login', [
             token = response['token'];
             let date = users.getCurrentDate();
             if (moment(date).isAfter(response['token_date_end'])) token = users.getToken(response['id']);
-            await users.set(db, {'id': response['id'], 'type_user': response['type_user']}, {'token': token, 'token_date_end': dateEnd});
+            await users.set(conn, {'id': response['id'], 'type_user': response['type_user']}, {'token': token, 'token_date_end': dateEnd});
+            let user = await general.getUserByIdAndTypeUser(conn, response['id'], response['type_user']);
+            await conn.commit();
+            conn.release();
+
             status = 200;
-            /*json = general.getJsonToResponse({
-                    'email': req.body.email,
-                    'token': token,
-                    'token_date_end': dateEnd,
-                }, errors.OK);*/
-            json = {
+            json = general.getJsonToResponse(user, errors.OK);
+            /*json = {
                     'email': req.body.email,
                     'token': token,
                     'token_date_end': dateEnd,
                 };
-            json.error = errors.OK;
+            json.error = errors.OK;*/
         } catch (err) {
+            if (conn) {
+                conn.rollback();
+                conn.release();
+            }
             let error = general.treatError(err);
             status = error.status;
             json = error.json;
@@ -118,18 +129,27 @@ router.get('/:token',
         check("token", "Give a token.").exists()
     ],
     async function (req, res, next) {
-        let status, json;
+        let status, json, conn;
         try {
             validationResult(req).throw();
             let db = req.app.get('database');
-            let result = await users.verifyToken(db, req.params.token);
+            conn = await db.createConnection();
+            await conn.beginTransaction();
+            let result = await users.verifyToken(conn, req.params.token);
             let id = result['id'], typeUser = result['type_user'];
-            let user = await general.getUserByIdAndTypeUser(db, id, typeUser);
+            let user = await general.getUserByIdAndTypeUser(conn, id, typeUser);
+            await conn.commit();
+            conn.release();
+
             status = 200;
-            //json = general.getJsonToResponse(user, errors.OK);
-            json = user;
-            json.error = errors.OK;
+            json = general.getJsonToResponse(user, errors.OK);
+            /*json = user;
+            json.error = errors.OK;*/
         } catch (err) {
+            if (conn) {
+                conn.rollback();
+                conn.release();
+            }
             let error = general.treatError(err);
             status = error.status;
             json = error.json;
@@ -155,19 +175,20 @@ router.put('/:token',
         try {
             validationResult(req).throw();
             let db = req.app.get('database');
+            conn = await db.createConnection();
+            await conn.beginTransaction();
             let result = await users.verifyToken(db, req.params.token);
             let id = result['id'], typeUser = result['type_user'];
             let toSet = users.getSecureFieldsToSave(req.body);
-            conn = await db.createConnection();
-            await conn.beginTransaction();
             await users.set(conn, {'id': id, 'type_user': typeUser}, toSet);
             let user = await general.getUserByIdAndTypeUser(conn, id, typeUser);
             await conn.commit();
             conn.release();
+            
             status = 200;
-            // json = general.getJsonToResponse(user, errors.OK);
-            json = user;
-            json.error = errors.OK;
+            json = general.getJsonToResponse(user, errors.OK);
+            /*json = user;
+            json.error = errors.OK;*/
         } catch (err) {
             if (conn) {
                 await conn.rollback();

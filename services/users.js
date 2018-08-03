@@ -25,6 +25,9 @@ users.availableFields = [
     'date_start',
     'token',
     'token_date_end',
+    'google_access_token',
+    'google_refresh_token',
+    'google_expiration',
     'tags', // is a different table
 ];
 
@@ -47,7 +50,7 @@ users.availableFields = [
  * NOTE: throws errors (@see entities/errors/errors.js)
  */
 users.create = async function(db, info) {
-    let result = {}, conn;
+    let result = {};
     try {
         // password hashing
         let salt = bcrypt.genSaltSync(10);
@@ -55,18 +58,16 @@ users.create = async function(db, info) {
         let dateEnd = users.getDateEnd();
         // anything goes for the first parameter
         let token = users.getToken(salt);
-        conn = await db.createConnection();
-        await conn.beginTransaction();
 
         let searchKey = slugify(info.name);
         // remove hifens from searchKey variable
         searchKey = searchKey.replace(/-/g, "");
         let query = 'SELECT users.id FROM users WHERE users.search_key LIKE ?';
-        let response = await conn.query(query, [searchKey + '%']);
+        let response = await db.query(query, [searchKey + '%']);
         let len;
         searchKey += ((len = response.length) != 0 ? len : '');
 
-        await conn.query('INSERT INTO users (email, name, password, search_key, picture_hash, type_user, token, token_date_end)' +
+        await db.query('INSERT INTO users (email, name, password, search_key, picture_hash, type_user, token, token_date_end)' +
             ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
                 info.email,
                 info.name,
@@ -79,9 +80,6 @@ users.create = async function(db, info) {
             ]
         );
 
-        await conn.commit();
-        conn.release();
-
         result.result = {
             "email": info.email,
             "name": info.name,
@@ -90,10 +88,6 @@ users.create = async function(db, info) {
             "token_date_end": dateEnd
         };
     } catch (error) {
-        if (conn) {
-            conn.rollback();
-            conn.release();
-        }
         // any of the possibilities means that the email is duplicated
         if (error.code === 'ER_DUP_ENTRY' || error.errno == 1062) {
             throw errors.getError(errors.DUPLICATED_EMAIL);
@@ -141,7 +135,6 @@ users.get = async function(db, searchInfo, retrievedInfo) {
     if (!retrievedInfo) retrievedInfo = users.availableFields.slice();
     query += 'users.id, users.type_user, users.token, users.token_date_end, ';
     for (let len = retrievedInfo.length; i < len; i++) {
-        //if (retrievedInfo[i] == 'password') continue; // only allows our app to access password
         if (retrievedInfo[i] == 'tags') {
             if (searchInfo['type_user'] == 'mentor') {
                 hasTags = true;
@@ -185,34 +178,10 @@ users.get = async function(db, searchInfo, retrievedInfo) {
 
     try {
         let response = await db.query(query, parameters);
-        let lenResponse = response.length;
-        if (lenResponse) {
-            let tags = {};
-            if (hasTags) {
-                parameters = [];
-                query = 'SELECT users_tags.user_id, tags.tag FROM tags, users_tags ' +
-                    'WHERE tags.id = users_tags.tag_id AND users_tags.user_id IN (';
-                for (let i = 0; i < lenResponse; i++) {
-                    if (response[i].hasOwnProperty('id')) {
-                        query += '?,';
-                        parameters.push(response[i]['id']);
-                    }
-                }
-                query = query.slice(0, -1) + ')';
-                let result = await db.query(query, parameters);
+        if (response.length) {
+            if (hasTags) response = await getTagsInResponse(db, response);
 
-                let lenResult = result.length;
-                if (lenResult) {
-                    for (let i = 0; i < lenResult; i++) {
-                        if (tags.hasOwnProperty(result[i]['user_id'])) tags[result[i]['user_id']].push(result[i]['tag']);
-                        else tags[result[i]['user_id']] = [result[i]['tag']];
-                    }
-                    for (let i = 0; i < lenResult; i++) {
-                        response[i].tags = (tags[response[i]['id']] ? tags[response[i]['id']] : []);
-                    }
-                }
-            }
-
+            // transform every blob/buffer in a simple string in response object
             for (let index in response) {
                 for (let key in response[index]) {
                     if (response[index].hasOwnProperty(key)
@@ -226,6 +195,7 @@ users.get = async function(db, searchInfo, retrievedInfo) {
 
         result.result = response;
     } catch (error) {
+        console.log(error);
         throw errors.getError(errors.DATABASE_ERROR, error.sqlState);
     }
     return result;
@@ -267,6 +237,7 @@ users.set = async function(db, searchInfo, updatedInfo) {
             if (key == 'name') hasName = true;
             query += 'users.' + key + ' = ?, ';
             if (key == 'password') updatedInfo[key] = bcrypt.hashSync(updatedInfo[key], bcrypt.genSaltSync(10));
+            if (key == 'google_expiration') updatedInfo[key] = users.getDateInRightFormat(updatedInfo[key]);
             parameters.push(updatedInfo[key]);
         }
     }
@@ -364,7 +335,16 @@ users.getDateEnd = function(currentTimestamp) {
  * @return a date in 'YYYY-MM-DD hh:mm:ss' format
  */
 users.getCurrentDate = function() {
-    return moment(Date.now()).utc().format('YYYY-MM-DD hh:mm:ss');
+    return users.getDateInRightFormat(Date.now());
+}
+
+/**
+ * get a date in right format
+ *
+ * @return a date in 'YYYY-MM-DD hh:mm:ss' format
+ */
+users.getDateInRightFormat = function(date) {
+    return moment(date).utc().format('YYYY-MM-DD hh:mm:ss');
 }
 
 /**
@@ -434,7 +414,7 @@ function removeExtraFields(fields, isObject = true) {
  * @param tags - array with the tags to save
  */
 async function saveTags(db, userId, tags) {
-    if (tags == []) return;
+    if (tags.constructor !== Array || tags.length == 0) return;
 
     query = 'INSERT IGNORE INTO tags (tag) VALUES ';
     for (let i = 0, len = tags.length; i < len; i++) {
@@ -481,6 +461,32 @@ async function saveTags(db, userId, tags) {
         query = query.slice(0, -1) + ')';
         await db.query(query, parameters);
     }
+}
+
+async function getTagsInResponse(db, response) {
+    let tags = {}, lenResponse = response.length;
+    parameters = [];
+    query = 'SELECT users_tags.user_id, tags.tag FROM tags, users_tags ' +
+        'WHERE tags.id = users_tags.tag_id AND users_tags.user_id IN (';
+    for (let i = 0; i < lenResponse; i++) {
+        if (response[i].hasOwnProperty('id')) {
+            query += '?,';
+            parameters.push(response[i]['id']);
+        }
+    }
+    query = query.slice(0, -1) + ')';
+    let result = await db.query(query, parameters);
+
+    for (let i = 0, len = result.length; i < len; i++) {
+        if (tags.hasOwnProperty(result[i]['user_id'])) tags[result[i]['user_id']].push(result[i]['tag']);
+        else tags[result[i]['user_id']] = [result[i]['tag']];
+    }
+
+    for (let i = 0; i < lenResponse; i++) {
+        response[i].tags = (tags[response[i]['id']] ? tags[response[i]['id']] : []);
+    }
+
+    return response;
 }
 
 module.exports = users;
